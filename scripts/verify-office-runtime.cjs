@@ -1,11 +1,18 @@
-/** Native payload and rendering gate, also usable on the installed application. */
+/** Native payload and rendering gate, also usable on the installed application.
+ *
+ * `engine` selects how much of the LibreOffice rendering path is exercised.
+ * 'required' is the macOS and Windows behaviour. 'absent' is for platforms
+ * where upstream publishes no LibreOfficeKit build: the Python authoring stack
+ * is still verified end to end, and the caller asserts the engine's documented
+ * unavailability separately instead of this gate pretending the conversion ran.
+ */
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
 const { promisify } = require('node:util')
 const execFile = promisify(require('node:child_process').execFile)
 
-async function verifyOfficeRuntime(resources, executable, smokeScript = path.join(__dirname, 'office-runtime', 'smoke.py')) {
+async function verifyOfficeRuntime(resources, executable, smokeScript = path.join(__dirname, 'office-runtime', 'smoke.py'), { engine = 'required' } = {}) {
   const payload = path.join(resources, 'office-runtime', 'primary-runtime')
   const metadata = path.join(payload, 'runtime.json')
   const manifest = JSON.parse(await fs.readFile(metadata, 'utf8'))
@@ -20,6 +27,10 @@ async function verifyOfficeRuntime(resources, executable, smokeScript = path.joi
     await execFile(python, ['-I', '-B', '-m', 'pip', 'check'], options)
     const checker = path.join(resources, 'office-runtime', 'office-skills', 'scripts', 'check_office.py')
     const cli = path.join(resources, 'office-cli.mjs')
+    if (engine === 'absent') {
+      console.log('Packaged Office authoring and structure checks passed; LibreOffice rendering is unavailable on this platform')
+      return
+    }
     await execFile(executable, [cli, 'capabilities', '--json'], options)
     for (const extension of ['docx', 'pptx', 'xlsx']) {
       const input = path.join(scratch, `sample.${extension}`)
